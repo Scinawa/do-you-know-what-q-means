@@ -7,8 +7,8 @@ from sklearn.metrics import accuracy_score
 import matplotlib.pyplot as plt
 from matplotlib import rc
 
-rc("font", **{"family": "sans-serif", "sans-serif": ["Helvetica"]})
-rc("text", usetex=True)
+# rc("font", **{"family": "sans-serif", "sans-serif": ["Helvetica"]})
+# rc("text", usetex=True)
 import numpy as np
 from scipy.optimize import linear_sum_assignment
 from sklearn.datasets import fetch_openml
