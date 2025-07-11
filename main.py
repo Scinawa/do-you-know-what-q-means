@@ -33,6 +33,8 @@ def main():
     n = len(X)  # number of samples
     k = len(set(Y))  # number of clusters
     tolerance = 50  # convergence parameter
+    constant_enabled = False  # Whether to use theoretical constants
+    sample_beginning = True  # Whether to sample P and Q at initialization
 
     logger = logging.getLogger("main")
 
@@ -42,9 +44,10 @@ def main():
         epsilon=epsilon,
         delta=delta,
         tol=tolerance,
-        constant_enabled=False,
+        constant_enabled=constant_enabled,
         random_state=42,  # Fix randomness in EEKMeans
         logger=logger,
+        sample_beginning=sample_beginning,
     )
 
     logger.info(f"||V|| (spectral norm): {eekmeans.V_norm:.2f}")
@@ -56,6 +59,8 @@ def main():
     logger.info(f"Tolerance: {eekmeans.tol}")
     logger.info(f"Sample size p: {eekmeans.p}")
     logger.info(f"Sample size q: {eekmeans.q}")
+    logger.info(f"Constant enabled: {constant_enabled}")
+    logger.info(f"Sample at beginning: {sample_beginning}")
 
     eekmeans.fit(X)
 

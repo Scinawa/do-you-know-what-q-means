@@ -370,7 +370,6 @@ class KMeans(BaseKMeans):
         delta=0.5,
         tol=1e-4,
         random_state=None,
-        constant_enabled=False,
         logger=None,
     ):
         super().__init__(
@@ -381,7 +380,6 @@ class KMeans(BaseKMeans):
             delta=delta,
             tol=tol,
             random_state=random_state,
-            constant_enabled=constant_enabled,
             logger=logger,
         )
 

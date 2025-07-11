@@ -87,6 +87,23 @@ def create_dataset(percentile=100):
     return X, Y
 
 
+def create_extended_dataset(n):
+    mnist = fetch_openml("mnist_784", version=1, as_frame=False)
+    X, Y_ = mnist["data"], mnist["target"]
+
+    # Extend X and Y to length n by randomly sampling from X and Y (with replacement)
+    if len(X) < n:
+        num_to_add = n - len(X)
+        indices = np.random.choice(len(X), size=num_to_add, replace=True)
+        X_tended = np.vstack([X, X[indices]])
+        Y_tended = np.concatenate([Y_, Y_[indices]])
+    else:
+        X_tended = X[:n]
+        Y_tended = Y_[:n]
+
+    return X_tended, Y_tended
+
+
 def stepwise_kmeans(
     X,
     n_clusters,
@@ -97,6 +114,8 @@ def stepwise_kmeans(
     logger=None,
     epsilon=1,
     delta=0.5,
+    constant_enabled=False,
+    sample_beginning=True,
 ):
     """
     Perform stepwise KMeans or EEKMeans clustering, storing centroids and errors at each iteration.
@@ -121,6 +140,10 @@ def stepwise_kmeans(
         Approximation parameter for EEKMeans.
     delta : float, default=0.5
         Failure probability parameter for EEKMeans.
+    constant_enabled : bool, default=False
+        Whether to use theoretical constants for sampling sizes.
+    sample_beginning : bool, default=True
+        Whether to sample P and Q at initialization (EEKMeans only).
 
     Returns
     -------
@@ -146,9 +169,10 @@ def stepwise_kmeans(
             tol=tol,
             random_state=random_state,
             logger=logger,
-            constant_enabled=False,
+            constant_enabled=constant_enabled,
             epsilon=epsilon,
             delta=delta,
+            sample_beginning=sample_beginning,
         )
     else:
         raise ValueError("Invalid algorithm. Choose 'kmeans' or 'eekmeans'.")
@@ -164,24 +188,20 @@ def stepwise_kmeans(
     return results, np.average(clustering.iteration_duration)
 
 
-# Example usage
-if __name__ == "__main__":
-    np.random.seed(42)  # Fix randomness globally
-    # DEBUG
-    logging.basicConfig(
-        level=logging.INFO, format="%(asctime)s [%(levelname)s] %(message)s"
-    )
-    logger = logging.getLogger("test")
-
+def experiment_one():
     X, _ = create_dataset(percentile=95)
     n_clusters = 10  # Number of clusters for MNIST digits
-    max_iter = 10
-    tol = 10
+    max_iter = 15
+    tol = 12
     epsilon = 250  # approximation parameter
     delta = 0.5  # failure probability
+    constant_enabled = False  # Whether to use theoretical constants
+    sample_beginning = True  # Whether to sample P and Q at initialization
 
     logging.info(
-        f"Parameters: n_clusters={n_clusters}, max_iter={max_iter}, tol={tol}, epsilon={epsilon}, delta={delta}"
+        f"Parameters: n_clusters={n_clusters}, max_iter={max_iter}, tol={tol}, "
+        f"epsilon={epsilon}, delta={delta}, constant_enabled={constant_enabled}, "
+        f"sample_beginning={sample_beginning}"
     )
 
     # Run both algorithms
@@ -192,6 +212,7 @@ if __name__ == "__main__":
         tol=tol,
         algorithm="kmeans",
         logger=logger,
+        constant_enabled=constant_enabled,
     )
     results_eekmeans, avg_eekmeans = stepwise_kmeans(
         X,
@@ -202,6 +223,8 @@ if __name__ == "__main__":
         logger=logger,
         epsilon=epsilon,
         delta=delta,
+        constant_enabled=constant_enabled,
+        sample_beginning=sample_beginning,
     )
 
     # Extract iteration numbers and errors
@@ -228,14 +251,85 @@ if __name__ == "__main__":
     # Save the plot
     plt.savefig("MSE_changes_comparison.pdf")
 
-    # Calculate MSE (RSS) for both models using their final centroids
+    # Calculate RSS for both models using their final centroids
     final_centroids_kmeans = results_kmeans[-1]["centroids"]
     final_centroids_eekmeans = results_eekmeans[-1]["centroids"]
 
-    mse_kmeans = residual_sum_of_squares(X, final_centroids_kmeans) / X.shape[0]
-    mse_eekmeans = residual_sum_of_squares(X, final_centroids_eekmeans) / X.shape[0]
+    rss_kmeans = residual_sum_of_squares(X, final_centroids_kmeans) / X.shape[0]
+    rss_eekmeans = residual_sum_of_squares(X, final_centroids_eekmeans) / X.shape[0]
 
-    logging.info(f"KMeans MSE: {mse_kmeans:.4f}")
-    logging.info(f"EEKMeans MSE: {mse_eekmeans:.4f}")
+    logging.info(f"KMeans RSS: {rss_kmeans:.4f}")
+    logging.info(f"EEKMeans RSS: {rss_eekmeans:.4f}")
     logging.info(f"Average KMeans iteration duration: {avg_kmeans:.4f} seconds")
     logging.info(f"Average EEKMeans iteration duration: {avg_eekmeans:.4f} seconds")
+
+
+def experiment_two():
+
+    ns = np.linspace(30000, 300000, 10, dtype=int)
+    avg_kmeans_times = []
+    avg_eekmeans_times = []
+
+    n_clusters = 10
+    max_iter = 10
+    tol = 12
+    epsilon = 250
+    delta = 0.5
+    constant_enabled = False
+    sample_beginning = True
+
+    for n in ns:
+        logging.info(f"Running experiment for n={n} (dataset size: {n})")
+        X, _ = create_extended_dataset(n)
+        # KMeans
+        _, avg_kmeans = stepwise_kmeans(
+            X,
+            n_clusters=n_clusters,
+            max_iter=max_iter,
+            tol=tol,
+            algorithm="kmeans",
+            logger=logger,
+            constant_enabled=constant_enabled,
+        )
+        # EEKMeans
+        _, avg_eekmeans = stepwise_kmeans(
+            X,
+            n_clusters=n_clusters,
+            max_iter=max_iter,
+            tol=tol,
+            algorithm="eekmeans",
+            logger=logger,
+            epsilon=epsilon,
+            delta=delta,
+            constant_enabled=constant_enabled,
+            sample_beginning=sample_beginning,
+        )
+        avg_kmeans_times.append(avg_kmeans)
+        avg_eekmeans_times.append(avg_eekmeans)
+        logging.info(
+            f"n={n}: KMeans avg iter {avg_kmeans:.4f}s, EEKMeans avg iter {avg_eekmeans:.4f}s"
+        )
+
+    plt.figure(figsize=(10, 6))
+    plt.plot(ns, avg_kmeans_times, "b-o", label="KMeans")
+    plt.plot(ns, avg_eekmeans_times, "r-o", label="EEKMeans")
+    plt.xlabel("Dataset size (n)")
+    plt.ylabel("Average iteration duration (seconds)")
+    plt.title("Average iteration duration vs dataset size")
+    plt.grid(True, linestyle="--", alpha=0.7)
+    plt.legend()
+    plt.savefig("avg_iteration_duration_vs_n.pdf")
+
+
+# Example usage
+if __name__ == "__main__":
+    np.random.seed(42)  # Fix randomness globally
+    # DEBUG
+    logging.basicConfig(
+        level=logging.INFO, format="%(asctime)s [%(levelname)s] %(message)s"
+    )
+    logger = logging.getLogger("test")
+
+    # experiment_one()
+
+    experiment_two()
