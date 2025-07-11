@@ -26,6 +26,7 @@ def create_dataset(percentile=100):
 
 
 def main():
+    np.random.seed(42)  # Fix randomness for reproducibility
     X, Y = create_dataset(percentile=95)
     epsilon = 200  # approximation parameter
     delta = 0.1  # failure probability
@@ -42,6 +43,7 @@ def main():
         delta=delta,
         tol=tolerance,
         constant_enabled=False,
+        random_state=42,  # Fix randomness in EEKMeans
         logger=logger,
     )
 
