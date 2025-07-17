@@ -170,14 +170,18 @@ class EEKMeans(BaseKMeans):
             # Time sampling of P
             start_time_P_init = timeit.default_timer()
             self.P = np.random.choice(len(X), size=self.p, replace=True)
-            elapsed_P_init = timeit.default_timer() - start_time_P_init
-            self.logger.info(f"Init: Time to sample P: {elapsed_P_init:.6f} seconds")
+            self.elapsed_P_init = timeit.default_timer() - start_time_P_init
+            self.logger.info(
+                f"Init: Time to sample P: {self.elapsed_P_init:.6f} seconds"
+            )
 
             # Time sampling of Q
             start_time_Q_init = timeit.default_timer()
             self.Q = self.distrib_over_norms.rvs(size=self.q)
-            elapsed_Q_init = timeit.default_timer() - start_time_Q_init
-            self.logger.info(f"Init: Time to sample Q: {elapsed_Q_init:.6f} seconds")
+            self.elapsed_Q_init = timeit.default_timer() - start_time_Q_init
+            self.logger.info(
+                f"Init: Time to sample Q: {self.elapsed_Q_init:.6f} seconds"
+            )
 
             self.logger.info(
                 f"Sampled P and Q at initialization (sizes: {len(self.P)}, {len(self.Q)})"
@@ -322,11 +326,11 @@ class EEKMeans(BaseKMeans):
             self.iteration_duration.append(iteration_time)
 
             iteration += 1
-            self.logger.info(
+            self.logger.debug(
                 f"Iteration {iteration}, Movements: {error:.6f}, Time: {iteration_time:.6f} seconds"
             )
 
-        self.logger.info(f"Algorithm converged after {iteration} iterations")
+        self.logger.debug(f"Algorithm converged after {iteration} iterations")
         if iteration > 0:
             self.logger.debug(
                 f"Average iteration time: {np.mean(self.iteration_duration):.6f} seconds"
@@ -445,11 +449,11 @@ class KMeans(BaseKMeans):
             self.iteration_duration.append(iteration_time)
 
             iteration += 1
-            self.logger.info(
+            self.logger.debug(
                 f"Iteration {iteration}, Movements: {error:.6f}, Time: {iteration_time:.6f} seconds"
             )
 
-        self.logger.info(f"Algorithm converged after {iteration} iterations")
+        self.logger.debug(f"Algorithm converged after {iteration} iterations")
         if iteration > 0:
             self.logger.debug(
                 f"Average iteration time: {np.mean(self.iteration_duration):.6f} seconds"
