@@ -14,65 +14,8 @@ from sklearn.datasets import fetch_openml
 from epsiloneta_kmeans import KMeans, EEKMeans
 import logging
 import time
+from utils import residual_sum_of_squares, calculate_centroid_error
 import pickle
-
-
-def residual_sum_of_squares(X, centroids):
-    """
-    Calculate the residual sum of squares (RSS) for the given data and centroids.
-
-    Parameters
-    ----------
-    X : np.ndarray
-        Input data points.
-
-    centroids : np.ndarray
-        Cluster centroids.
-
-    Returns
-    -------
-    float
-        Residual sum of squares.
-    """
-    distances = np.linalg.norm(X[:, np.newaxis] - centroids, axis=2)
-    closest_centroid_distances = np.min(distances, axis=1)
-    rss = np.sum(closest_centroid_distances**2)
-    return rss
-
-
-def calculate_centroid_error(centroids1, centroids2):
-    """
-    Calculate the total error between two sets of centroids and return the sorted centroids2.
-
-    Parameters
-    ----------
-    centroids1 : list of np.ndarray
-        Centroids from the first model.
-
-    centroids2 : list of np.ndarray
-        Centroids from the second model.
-
-    Returns
-    -------
-    float
-        Total error (sum of distances between matched centroids).
-    np.ndarray
-        Sorted centroids2 to correspond to centroids1.
-    """
-
-    centroids1 = np.array(centroids1)
-    centroids2 = np.array(centroids2)
-
-    # Compute the distance matrix between centroids
-    distance_matrix = np.linalg.norm(centroids1[:, np.newaxis] - centroids2, axis=2)
-
-    # Find the optimal assignment
-    row_ind, col_ind = linear_sum_assignment(distance_matrix)
-
-    total_error = distance_matrix[row_ind, col_ind].sum()
-    sorted_centroids2 = centroids2[col_ind]
-
-    return total_error, sorted_centroids2
 
 
 def create_dataset(percentile=100):
@@ -116,6 +59,7 @@ def stepwise_kmeans(
     delta=0.5,
     constant_enabled=False,
     sample_beginning=True,
+    seed_for_samples=None,
 ):
     """
     Perform stepwise KMeans or EEKMeans clustering, storing centroids and errors at each iteration.
@@ -158,7 +102,7 @@ def stepwise_kmeans(
             n_clusters=n_clusters,
             max_iter=max_iter,
             tol=tol,
-            random_state=random_state,
+            random_seed_centroids=random_state,
             logger=logger,
         )
     elif algorithm == "eekmeans":
@@ -167,7 +111,8 @@ def stepwise_kmeans(
             n_clusters=n_clusters,
             max_iter=max_iter,
             tol=tol,
-            random_state=random_state,
+            random_seed_centroids=random_state,
+            seed_for_samples=seed_for_samples,
             logger=logger,
             constant_enabled=constant_enabled,
             epsilon=epsilon,
@@ -186,18 +131,26 @@ def stepwise_kmeans(
             "iteration": i,
             "centroids": c,
             "movement": e,
-            "iteration_duration": clustering.iteration_duration[i] 
+            "iteration_duration": clustering.iteration_duration[i],
         }
         if algorithm == "eekmeans" and i == 0:
             result["elapsed_P_init"] = getattr(clustering, "elapsed_P_init", None)
             result["elapsed_Q_init"] = getattr(clustering, "elapsed_Q_init", None)
         results.append(result)
-        logging.info(f"Iteration {i + 1}: movement = {e:.4f}, duration = {clustering.iteration_duration[i]:.4f} seconds")
+        logging.info(
+            f"Iteration {i + 1}: movement = {e:.4f}, duration = {clustering.iteration_duration[i]:.4f} seconds"
+        )
 
     return results
 
 
-def plot_errors(kmeans_iterations, kmeans_movements, eekmeans_iterations, eekmeans_movements, filename="MSE_changes_comparison.pdf"):
+def plot_errors(
+    kmeans_iterations,
+    kmeans_movements,
+    eekmeans_iterations,
+    eekmeans_movements,
+    filename="MSE_changes_comparison.pdf",
+):
     plt.figure(figsize=(10, 6))
     plt.plot(kmeans_iterations, kmeans_movements, "b-o", label="KMeans")
     plt.plot(eekmeans_iterations, eekmeans_movements, "r-o", label="EEKMeans")
@@ -207,6 +160,7 @@ def plot_errors(kmeans_iterations, kmeans_movements, eekmeans_iterations, eekmea
     plt.grid(True, linestyle="--", alpha=0.7)
     plt.legend()
     plt.savefig(filename)
+
 
 def experiment_one(logger):
     X, _ = create_dataset(percentile=95)
@@ -257,7 +211,9 @@ def experiment_one(logger):
     logging.getLogger().setLevel(logging.INFO)
 
     # Plot the movements
-    plot_errors(kmeans_iterations, kmeans_movements, eekmeans_iterations, eekmeans_movements)
+    plot_errors(
+        kmeans_iterations, kmeans_movements, eekmeans_iterations, eekmeans_movements
+    )
 
     # Calculate RSS for both models using their final centroids
     final_centroids_kmeans = results_kmeans[-1]["centroids"]
@@ -275,28 +231,51 @@ def experiment_one(logger):
         f"Total EEKMeans iterations duration: {np.average([r['iteration_duration'] for r in results_eekmeans]):.4f} seconds"
     )
 
+
 def plot_comparison(
-    ns, avg_kmeans_times, avg_eekmeans_times, numberkmeansiteration=None, numbereekmeansiterations=None, avg_P_init_times=None, avg_Q_init_times=None, filename="plot_comparison.pdf"
+    ns,
+    avg_kmeans_times,
+    avg_eekmeans_times,
+    numberkmeansiteration=None,
+    numbereekmeansiterations=None,
+    avg_P_init_times=None,
+    avg_Q_init_times=None,
+    filename="plot_comparison.pdf",
 ):
     plt.figure(figsize=(10, 6))
-    plt.plot(ns, avg_kmeans_times, "b-o", label="KMeans")
-    plt.plot(ns, avg_eekmeans_times, "r-o", label="EEKMeans")
+    plt.plot(ns, avg_kmeans_times, "b-o", label="KMeans iterations")
+    plt.plot(ns, avg_eekmeans_times, "r-o", label="EEKMeans iterations")
     if avg_P_init_times is not None:
         plt.plot(ns, avg_P_init_times, "g--s", label="EEKMeans P init")
     if avg_Q_init_times is not None:
         plt.plot(ns, avg_Q_init_times, "m--^", label="EEKMeans Q init")
     if numberkmeansiteration is not None:
         for x, y, num_iter in zip(ns, avg_kmeans_times, numberkmeansiteration):
-            plt.annotate(f"{num_iter}", (x, y), textcoords="offset points", xytext=(0,10), ha='center', color='blue')
+            plt.annotate(
+                f"{num_iter}",
+                (x, y),
+                textcoords="offset points",
+                xytext=(0, 10),
+                ha="center",
+                color="blue",
+            )
     if numbereekmeansiterations is not None:
         for x, y, num_iter in zip(ns, avg_eekmeans_times, numbereekmeansiterations):
-            plt.annotate(f"{num_iter}", (x, y), textcoords="offset points", xytext=(0,-15), ha='center', color='red')
+            plt.annotate(
+                f"{num_iter}",
+                (x, y),
+                textcoords="offset points",
+                xytext=(0, -15),
+                ha="center",
+                color="red",
+            )
     plt.xlabel("Dataset size (n)")
-    plt.ylabel("Average iteration duration (seconds)")
-    plt.title("Average iteration duration vs dataset size")
+    plt.ylabel("Time (seconds)")
+    plt.title("Algorithm runtime vs dataset size")
     plt.grid(True, linestyle="--", alpha=0.7)
     plt.legend()
     plt.savefig(filename)
+
 
 def experiment_two(logger, read=None):
     if read is not None:
@@ -304,31 +283,36 @@ def experiment_two(logger, read=None):
         with open(read, "rb") as f:
             results_dict = pickle.load(f)
         import pdb
+
         pdb.set_trace()
         ns = results_dict["ns"]
-        avg_kmeans_times = results_dict["avg_kmeans_times"]
-        avg_eekmeans_times = results_dict["avg_eekmeans_times"]
+        sum_kmeans_times = results_dict["sum_kmeans_times"]
+        sum_eekmeans_times = results_dict["sum_eekmeans_times"]
         kmeans_iterations = results_dict["kmeans_iterations"]
         eekmeans_iterations = results_dict["eekmeans_iterations"]
         avg_P_init_times = results_dict["avg_P_init_times"]
         avg_Q_init_times = results_dict["avg_Q_init_times"]
 
         plot_comparison(
-            ns, avg_kmeans_times, avg_eekmeans_times,
+            ns,
+            sum_kmeans_times,
+            sum_eekmeans_times,
             numberkmeansiteration=kmeans_iterations,
             numbereekmeansiterations=eekmeans_iterations,
             avg_P_init_times=avg_P_init_times,
-            avg_Q_init_times=avg_Q_init_times
+            avg_Q_init_times=avg_Q_init_times,
         )
         return
 
     ns = np.linspace(30000, 350000, 12, dtype=int)
+    repetitions = 10  # Number of repetitions for EEKMeans
     sum_kmeans_times = []
     sum_eekmeans_times = []
     avg_P_init_times = []
     avg_Q_init_times = []
     kmeans_iterations = []
     eekmeans_iterations = []
+    results_eekmeans = []
 
     n_clusters = 10
     max_iter = 65
@@ -341,37 +325,45 @@ def experiment_two(logger, read=None):
     for n in ns:
         logging.info(f"Running experiment for n={n} (dataset size: {n})")
         X, _ = create_extended_dataset(n)
-        # KMeans
-        results_kmeans = stepwise_kmeans(
-            X,
-            n_clusters=n_clusters,
-            max_iter=max_iter,
-            tol=tol,
-            algorithm="kmeans",
-            logger=logger,
-            constant_enabled=constant_enabled,
-        )
-        # EEKMeans
-        results_eekmeans = stepwise_kmeans(
-            X,
-            n_clusters=n_clusters,
-            max_iter=max_iter,
-            tol=tol,
-            algorithm="eekmeans",
-            logger=logger,
-            epsilon=epsilon,
-            delta=delta,
-            constant_enabled=constant_enabled,
-            sample_beginning=sample_beginning,
-        )
+        for i in range(repetitions):
+            # KMeans
+            results_kmeans = stepwise_kmeans(
+                X,
+                n_clusters=n_clusters,
+                max_iter=max_iter,
+                tol=tol,
+                algorithm="kmeans",
+                logger=logger,
+                constant_enabled=constant_enabled,
+            )
+            # EEKMeans
+
+            logging.info(f"Running EEKMeans repetition {i + 1} for n={n}")
+            results_eekmeans.append(
+                stepwise_kmeans(
+                    X,
+                    n_clusters=n_clusters,
+                    max_iter=max_iter,
+                    tol=tol,
+                    algorithm="eekmeans",
+                    logger=logger,
+                    epsilon=epsilon,
+                    delta=delta,
+                    constant_enabled=constant_enabled,
+                    sample_beginning=sample_beginning,
+                    seed_for_samples=i,
+                )
+            )
+
         # Extract iteration durations from results
         iteration_duration_kmeans = [r["iteration_duration"] for r in results_kmeans]
-        iteration_duration_eekmeans = [r["iteration_duration"] for r in results_eekmeans]
+        iteration_duration_eekmeans = [
+            r["iteration_duration"] for r in results_eekmeans
+        ]
 
-        
         sum_kmeans_times.append(np.sum(iteration_duration_kmeans))
         sum_eekmeans_times.append(np.sum(iteration_duration_eekmeans))
-        
+
         kmeans_iterations.append(len(iteration_duration_kmeans))
         eekmeans_iterations.append(len(iteration_duration_eekmeans))
 
@@ -405,12 +397,15 @@ def experiment_two(logger, read=None):
         pickle.dump(results_dict, f)
 
     plot_comparison(
-        ns, sum_kmeans_times, sum_eekmeans_times,
+        ns,
+        sum_kmeans_times,
+        sum_eekmeans_times,
         numberkmeansiteration=kmeans_iterations,
         numbereekmeansiterations=eekmeans_iterations,
         avg_P_init_times=avg_P_init_times,
-        avg_Q_init_times=avg_Q_init_times
+        avg_Q_init_times=avg_Q_init_times,
     )
+
 
 # Example usage
 if __name__ == "__main__":
@@ -420,6 +415,6 @@ if __name__ == "__main__":
     )
     logger = logging.getLogger("test")
 
-    #experiment_one(logger)
+    # experiment_one(logger)
 
-    experiment_two(logger)
+    experiment_two(logger)  # , read="experiment_two_results.pkl")
