@@ -1,10 +1,8 @@
-import numpy as np
-import scipy as sp
-from sklearn.datasets import fetch_openml
-from scipy.stats import rv_discrete
-import sys
 import timeit
 import logging
+
+import numpy as np
+from scipy.stats import rv_discrete
 
 
 class BaseKMeans:
@@ -37,14 +35,14 @@ class BaseKMeans:
         epsilon=1,
         delta=0.5,
         tol=1e-4,
-        random_state=None,
+        random_seed_centroids=None,
         constant_enabled=False,
         logger=None,
     ):
         self.n_clusters = n_clusters
         self.max_iter = max_iter
         self.tol = tol
-        self.random_state = random_state
+        self.random_seed_centroids = random_seed_centroids
         self.X = X
         self.epsilon = epsilon
         self.delta = delta
@@ -65,10 +63,14 @@ class BaseKMeans:
         else:
             self.logger = logger
 
+        self.movements_per_iteration = []
+        self.centroids_per_iteration = []
+        self.duration_of_iteration = []
+
     def _initialize_centroids(self, X):
         """Initialize centroids using the provided methods."""
-        if self.random_state is not None:
-            np.random.seed(self.random_state)  # Fix randomness
+        if self.random_seed_centroids is not None:
+            np.random.seed(self.random_seed_centroids)  # Fix randomness
         if self.n_clusters is not None:
             indices = np.random.choice(X.shape[0], self.n_clusters, replace=False)
             return X[indices]
@@ -131,7 +133,8 @@ class EEKMeans(BaseKMeans):
         epsilon=1,
         delta=0.5,
         tol=1e-4,
-        random_state=None,
+        random_seed_centroids=None,
+        seed_for_samples=None,
         constant_enabled=False,
         logger=None,
         sample_beginning=True,
@@ -143,7 +146,7 @@ class EEKMeans(BaseKMeans):
             epsilon=epsilon,
             delta=delta,
             tol=tol,
-            random_state=random_state,
+            random_seed_centroids=random_seed_centroids,
             constant_enabled=constant_enabled,
             logger=logger,
         )
@@ -153,9 +156,19 @@ class EEKMeans(BaseKMeans):
         self.norms = np.linalg.norm(self.X, axis=1)
         self.V_norm_2_1 = np.sum(self.norms)
         self.sample_beginning = sample_beginning
+        self.seed_for_samples = seed_for_samples
+
+        self.P_times = []
+        self.Q_times = []
 
         self.p, self.q = self._compute_p_q()
-        logging.info(f"Sample sizes: p={self.p}, q={self.q}")
+        self.logger.debug(f"Sample sizes: p={self.p}, q={self.q}")
+
+        # If sample_beginning is True, sample P and Q once during initialization
+        if self.sample_beginning:
+            self.P, self.Q = self._sample_P_Q()
+
+    def _sample_P_Q(self):
 
         probabilities_ = self.norms / self.V_norm_2_1
 
@@ -163,29 +176,23 @@ class EEKMeans(BaseKMeans):
             values=(np.arange(len(self.X)), probabilities_)
         )
 
-        # If sample_beginning is True, sample P and Q once during initialization
-        if self.sample_beginning:
-            np.random.seed(self.random_state)
+        np.random.seed(self.seed_for_samples)
 
-            # Time sampling of P
-            start_time_P_init = timeit.default_timer()
-            self.P = np.random.choice(len(X), size=self.p, replace=True)
-            self.elapsed_P_init = timeit.default_timer() - start_time_P_init
-            self.logger.info(
-                f"Init: Time to sample P: {self.elapsed_P_init:.6f} seconds"
-            )
+        start_time_P_init = timeit.default_timer()
+        P = np.random.choice(len(self.X), size=self.p, replace=True)
+        P_smp_time = timeit.default_timer() - start_time_P_init
+        self.P_times.append(P_smp_time)  # <-- append time
 
-            # Time sampling of Q
-            start_time_Q_init = timeit.default_timer()
-            self.Q = self.distrib_over_norms.rvs(size=self.q)
-            self.elapsed_Q_init = timeit.default_timer() - start_time_Q_init
-            self.logger.info(
-                f"Init: Time to sample Q: {self.elapsed_Q_init:.6f} seconds"
-            )
+        start_time_Q_init = timeit.default_timer()
+        Q = self.distrib_over_norms.rvs(size=self.q)
+        Q_smp_time = timeit.default_timer() - start_time_Q_init
+        self.Q_times.append(Q_smp_time)  # <-- append time
 
-            self.logger.info(
-                f"Sampled P and Q at initialization (sizes: {len(self.P)}, {len(self.Q)})"
-            )
+        self.logger.debug(
+            f"Sampling Q: {Q_smp_time:.6f}s, Sampling P: {P_smp_time:.6f}s"
+        )
+
+        return P, Q  # <-- do not return times
 
     def _compute_p_q(self):
         if self.constant_enabled:
@@ -231,14 +238,8 @@ class EEKMeans(BaseKMeans):
         self : object
             Fitted estimator.
         """
-        if self.random_state is not None:
-            np.random.seed(self.random_state)  # Fix randomness
 
         k = self.n_clusters
-
-        self.movements = []
-        self.list_centroids = []
-        self.iteration_duration = []  # List to store iteration durations
 
         # Initialize centroids
         centroids = self._initialize_centroids(X)
@@ -252,17 +253,9 @@ class EEKMeans(BaseKMeans):
 
             # Sample P and Q if not sampled at initialization
             if not self.sample_beginning:
-                # Measure time to sample P
-                start_time_P = timeit.default_timer()
-                P = np.random.choice(len(X), size=self.p, replace=True)
-                elapsed_P = timeit.default_timer() - start_time_P
-                self.logger.debug(f"Time to sample P: {elapsed_P:.6f} seconds")
-
-                # Measure time to sample Q
-                start_time_Q = timeit.default_timer()
-                Q = self.distrib_over_norms.rvs(size=self.q)
-                elapsed_Q = timeit.default_timer() - start_time_Q
-                self.logger.debug(f"Time to sample Q: {elapsed_Q:.6f} seconds")
+                P, Q = self._sample_P_Q()
+                self.logger.debug(f"Time to sample P: {self.P_times[-1]:.6f} seconds")
+                self.logger.debug(f"Time to sample Q: {self.Q_times[-1]:.6f} seconds")
             else:
                 # Use pre-sampled P and Q
                 P = self.P
@@ -289,12 +282,7 @@ class EEKMeans(BaseKMeans):
                 label = labels[len(P) + i]
                 Q_sets[label].append(sample)
 
-            # Check if P_sets and Q_sets are not empty
-            # Don't remove these debug lines, they are useful for debugging
-            # self.logger.debug("P_sets lengths: %s", [len(P_sets[j]) for j in range(k)])
-            # self.logger.debug("Q_sets lengths: %s", [len(Q_sets[j]) for j in range(k)])
-
-            # Step 7: Update centroids cⱼᵗ⁺¹ = (||V||₂,₁/n|Pⱼ|) * Σᵢ∈Qⱼ (vᵢ/q) * (||vᵢ||)
+            # Step 7: Update centroids
             new_centroids = np.zeros_like(centroids)
             for j in range(k):
                 if len(P_sets[j]) > 0 and len(Q_sets[j]) > 0:
@@ -318,23 +306,18 @@ class EEKMeans(BaseKMeans):
             centroids = new_centroids
 
             # Store error and centroids for this iteration
-            self.movements.append(error)
-            self.list_centroids.append(centroids.copy())
+            self.movements_per_iteration.append(error)
+            self.centroids_per_iteration.append(centroids.copy())
 
             # Calculate and store the duration of this iteration
             iteration_time = timeit.default_timer() - start_time_iteration
-            self.iteration_duration.append(iteration_time)
+            self.duration_of_iteration.append(iteration_time)
+
+            self.logger.debug(
+                f"EEKMeans Iteration {iteration}: error={error:.4f}, duration={iteration_time:.4f}s"
+            )
 
             iteration += 1
-            self.logger.debug(
-                f"Iteration {iteration}, Movements: {error:.6f}, Time: {iteration_time:.6f} seconds"
-            )
-
-        self.logger.debug(f"Algorithm converged after {iteration} iterations")
-        if iteration > 0:
-            self.logger.debug(
-                f"Average iteration time: {np.mean(self.iteration_duration):.6f} seconds"
-            )
 
         # Store results as attributes
         self.cluster_centers_ = centroids
@@ -373,7 +356,7 @@ class KMeans(BaseKMeans):
         epsilon=1,
         delta=0.5,
         tol=1e-4,
-        random_state=None,
+        random_seed_centroids=None,
         logger=None,
     ):
         super().__init__(
@@ -383,7 +366,7 @@ class KMeans(BaseKMeans):
             epsilon=epsilon,
             delta=delta,
             tol=tol,
-            random_state=random_state,
+            random_seed_centroids=random_seed_centroids,
             logger=logger,
         )
 
@@ -404,12 +387,8 @@ class KMeans(BaseKMeans):
         self : object
             Fitted estimator.
         """
-        if self.random_state is not None:
-            np.random.seed(self.random_state)  # Fix randomness
-
-        self.movements = []
-        self.list_centroids = []
-        self.iteration_duration = []  # List to store iteration durations
+        if self.random_seed_centroids is not None:
+            np.random.seed(self.random_seed_centroids)  # Fix randomness
 
         # Initialize centroids
         centroids = self._initialize_centroids(X)
@@ -419,7 +398,8 @@ class KMeans(BaseKMeans):
         self.logger.debug("Beginning main loop of KMeans.fit()")
 
         while (error > self.tol) and iteration < self.max_iter:
-            start_time_iteration = timeit.default_timer()  # Start timing the iteration
+            # Start timing the iteration
+            start_time_iteration = timeit.default_timer()
 
             # Step 1: Assign each point to the nearest centroid
             labels = np.zeros(self.n, dtype=int)
@@ -436,28 +416,23 @@ class KMeans(BaseKMeans):
                 else:
                     pass
 
-            # Compute change in centroids for convergence check
+            # Compute and store change in centroids
             error = np.mean(np.linalg.norm(new_centroids - centroids, axis=1))
+            self.movements_per_iteration.append(error)
+
+            # Store centroids for this iteration
             centroids = new_centroids
+            self.centroids_per_iteration.append(centroids.copy())
 
-            # Store error and centroids for this iteration
-            self.movements.append(error)
-            self.list_centroids.append(centroids.copy())
-
-            # Calculate and store the duration of this iteration
+            # Compute and store the duration of this iteration
             iteration_time = timeit.default_timer() - start_time_iteration
-            self.iteration_duration.append(iteration_time)
+            self.duration_of_iteration.append(iteration_time)
+
+            self.logger.debug(
+                f"KMeans Iteration {iteration}: error={error:.4f}, duration={iteration_time:.4f}s"
+            )
 
             iteration += 1
-            self.logger.debug(
-                f"Iteration {iteration}, Movements: {error:.6f}, Time: {iteration_time:.6f} seconds"
-            )
-
-        self.logger.debug(f"Algorithm converged after {iteration} iterations")
-        if iteration > 0:
-            self.logger.debug(
-                f"Average iteration time: {np.mean(self.iteration_duration):.6f} seconds"
-            )
 
         # Store results as attributes
         self.cluster_centers_ = centroids
