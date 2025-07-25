@@ -181,18 +181,18 @@ class EEKMeans(BaseKMeans):
         start_time_P_init = timeit.default_timer()
         P = np.random.choice(len(self.X), size=self.p, replace=True)
         P_smp_time = timeit.default_timer() - start_time_P_init
-        self.P_times.append(P_smp_time)  # <-- append time
+        self.P_times.append(P_smp_time)
 
         start_time_Q_init = timeit.default_timer()
         Q = self.distrib_over_norms.rvs(size=self.q)
         Q_smp_time = timeit.default_timer() - start_time_Q_init
-        self.Q_times.append(Q_smp_time)  # <-- append time
+        self.Q_times.append(Q_smp_time)
 
         self.logger.debug(
             f"Sampling Q: {Q_smp_time:.6f}s, Sampling P: {P_smp_time:.6f}s"
         )
 
-        return P, Q  # <-- do not return times
+        return P, Q
 
     def _compute_p_q(self):
         if self.constant_enabled:

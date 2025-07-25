@@ -4,6 +4,7 @@ from matplotlib import rc
 import numpy as np
 
 
+# OLD
 def plot_comparison(
     ns,
     avg_kmeans_times,
@@ -55,6 +56,20 @@ def plot_comparison(
     plt.grid(True, linestyle="--", alpha=0.7)
     plt.legend()
     plt.savefig(filename)
+
+
+def plot_experiment_one(averaged_results, filename="experiment_one_results.pdf"):
+    plt.figure(figsize=(10, 6))
+    for label, data in averaged_results.items():
+        plt.plot(data["avg_movements"], label=label)
+    plt.xlabel("Iteration")
+    plt.ylabel("Average Movement")
+    plt.yscale("log")
+    plt.title("Experiment One: Average Movement per Iteration")
+    plt.grid(True, linestyle="--", alpha=0.7)
+    plt.legend()
+    plt.savefig(filename)
+    return
 
 
 def plot_iteration_time(
