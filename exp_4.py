@@ -1,13 +1,16 @@
 import logging
 import os
-import pickle
 import datetime
 
+# import time
+import pickle
 import numpy as np
 
-from plots import plot_exp_three_rss
+
+from plots import plot_exp_four_rss
 from utils import (
     create_extended_dataset,
+    make_dataset_skewed,
     sample_gaussian_mixture,
     stepwise_kmeans,
 )
@@ -15,7 +18,7 @@ from utils import (
 os.environ["NUMEXPR_MAX_THREADS"] = "16"
 
 
-def postprocess_results(results, sizes_datasets):
+def postprocess_results(results, thetas):
     # Compute RSS differences between KMeans and other algorithms
     rss_differences = {}
 
@@ -23,26 +26,27 @@ def postprocess_results(results, sizes_datasets):
         if key == "KMeans":
             continue
 
-        # Compute RSS differences for each dataset size
+        # Compute RSS differences for each theta
         rss_differences[key] = []
-        for n in sizes_datasets:
-            # Directly access the RSS values that are already computed
+        for theta in thetas:
             kmeans_rss = [
-                clustering_event[-1]["RSS"] for clustering_event in results["KMeans"][n]
+                clustering_event[-1]["RSS"]
+                for clustering_event in results["KMeans"][theta]
             ]
             algorithm_rss = [
-                clustering_event[-1]["RSS"] for clustering_event in results[key][n]
+                clustering_event[-1]["RSS"] for clustering_event in results[key][theta]
             ]
 
-            # Compute the difference in averages for the current dataset size
+            # Compute the difference in averages for the current theta
             rss_differences[key].append(np.mean(kmeans_rss) - np.mean(algorithm_rss))
 
     return rss_differences
 
 
-def experiment_three(
+def experiment_four(
     logger,
-    sizes_datasets,
+    size_dataset,
+    thetas,
     repetitions,
     n_clusters,
     max_iter,
@@ -67,29 +71,29 @@ def experiment_three(
         for epsilon in epsilons:
             results[f"EEKMeans-ε={epsilon}"] = {}
 
-        for n in sizes_datasets:
-            logger.info(f"Running experiment for n={n} (dataset size: {n})")
+        for theta in thetas:
+            logger.info(f"Running experiment for theta={theta}")
 
             for key in results.keys():
-                results[key][n] = []
+                results[key][theta] = []
 
             if dataset == "gaussian_mixture":
-                X, _ = sample_gaussian_mixture(n=n, d=1000, k=n_clusters)
+                X, Y = sample_gaussian_mixture(n=size_dataset, d=1000, k=n_clusters)
             elif dataset == "mnist":
-                X, _ = create_extended_dataset(n)
+                X, Y = create_extended_dataset(size_dataset)
             else:
                 raise ValueError(
                     "Invalid dataset. Choose 'gaussian_mixture' or 'mnist'."
                 )
 
             # TODO skew the dataset if needed
-            # X, Y = skew_dataset(X, Y, n, n_clusters)
-            # n = X.shape[0]
+            X, Y = make_dataset_skewed(X, Y, theta, logger)
+            n = X.shape[0]
 
             for i in range(repetitions):
                 logger.info(f"Repetition {i + 1} of {repetitions}")
                 # # KMeans
-                results["KMeans"][n].append(
+                results["KMeans"][theta].append(
                     stepwise_kmeans(
                         X,
                         n_clusters=n_clusters,
@@ -108,7 +112,7 @@ def experiment_three(
                     )
 
                     # EEKMeans
-                    results[f"EEKMeans-ε={epsilon}"][n].append(
+                    results[f"EEKMeans-ε={epsilon}"][theta].append(
                         stepwise_kmeans(
                             X,
                             n_clusters=n_clusters,
@@ -133,16 +137,16 @@ def experiment_three(
             pickle.dump(results, f)
         logger.info(f"Results saved to {filename}")
 
-    # Postprocess results to get RSS differences for each dataset size
-    rss_differences = postprocess_results(results, sizes_datasets)
+    # Postprocess results to get RSS differences for each theta
+    rss_differences = postprocess_results(results, thetas)
     # rss_differences is a DICTIONARY with keys as algorithm names and values as lists of RSS differences
 
     # Plot average RSS differences
-    plot_exp_three_rss(
-        sizes_datasets,
+    plot_exp_four_rss(
+        thetas,
         rss_differences=rss_differences,  # pass the dictionary of rss differences
         filename="rss_differences_" + filename + ".pdf",
-        title="Average RSS Difference vs Dataset Size",
+        title="Average RSS Difference vs Theta",
     )
     logger.info("Average RSS differences plotted.")
 
@@ -153,14 +157,15 @@ if __name__ == "__main__":
     logging.basicConfig(
         level=logging.INFO, format="%(asctime)s [%(levelname)s] %(message)s"
     )
-    logger = logging.getLogger("EXP3")
+    logger = logging.getLogger("EXP4")
 
-    sizes_datasets = np.linspace(60000, 80000, 3, dtype=int)
-    repetitions = 2
+    size_dataset = 40000  # Size of the dataset
+    thetas = np.linspace(0.05, 1, 5, dtype=float)
+    repetitions = 6
     n_clusters = 10
-    max_iter = 65
+    max_iter = 40
     tol = 15
-    epsilons = (200, 300, 400, 500)  # (250, 450) --- IGNORE ---
+    epsilons = (200, 300, 400)  # , 400, 500)  # (250, 450) --- IGNORE ---
     delta = 0.5
     constant_enabled = False
     sample_beginning = True
@@ -173,10 +178,10 @@ if __name__ == "__main__":
         f"t_{timestamp}"
     )
 
-    # DON"T CHANGE ANYTHING BELOW
-    experiment_three(
+    experiment_four(
         logger,
-        sizes_datasets,
+        size_dataset,
+        thetas,
         repetitions,
         n_clusters,
         max_iter,
@@ -186,7 +191,6 @@ if __name__ == "__main__":
         delta,
         constant_enabled,
         sample_beginning,
-        filename=f"experiment_three_results_{param_str}",
-        # read="experiment_three_results_dataset_mnist_k_10_maxiter_65_tol_15_eps_(200, 300, 400, 500)_delta_0.5_constenabled_False_samplebeginning_True_reps_2_t_20250726_163319.pkl",
-        # read="experiment_two_results_dataset_mnist_k_10_maxiter_65_tol_15_eps_(250, 450)_delta_0.5_constenabled_False_samplebeginning_True_reps_2_t_20250726_152659.pkl",  # "results_20250722_121746.pkl",
+        filename=f"experiment_four_results_{param_str}",
+        # read="experiment_four_results_dataset_mnist_k_10_maxiter_40_tol_15_eps_(200, 300)_delta_0.5_constenabled_False_samplebeginning_True_reps_2_t_20250727_132956.pkl",
     )
