@@ -298,7 +298,7 @@ class EEKMeans(BaseKMeans):
                     new_centroids[j] = coefficient * weighted_sum
                 else:
                     self.logger.warning(
-                        f"Empty P or Q set for cluster {j} (|P_j|={len(P_sets[j])}, |Q_j|={len(Q_sets[j])})"
+                        f"Empty P or Q set for cluster {j} (|P_j|={len(P_sets[j])}, |Q_j|={len(Q_sets[j])}) at iteration {iteration}"
                     )
 
             # Compute change in centroids for convergence check
@@ -313,9 +313,9 @@ class EEKMeans(BaseKMeans):
             iteration_time = timeit.default_timer() - start_time_iteration
             self.duration_of_iteration.append(iteration_time)
 
-            self.logger.debug(
-                f"EEKMeans Iteration {iteration}: error={error:.4f}, duration={iteration_time:.4f}s"
-            )
+            # self.logger.debug(
+            #     f"EEKMeans Iteration {iteration}: error={error:.4f}, duration={iteration_time:.4f}s"
+            # )
 
             iteration += 1
 

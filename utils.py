@@ -189,7 +189,7 @@ def stepwise_kmeans(
     seed_for_samples=None,
     constant_enabled=None,
 ):
-    logger.info(f"Starting {algorithm} clustering with {n_clusters} clusters")
+    logger.debug(f"Starting {algorithm} clustering with {n_clusters} clusters")
 
     if algorithm == "KMeans":
         clustering = KMeans(

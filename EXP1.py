@@ -1,11 +1,13 @@
 import logging
 import pickle
 import datetime
+import os
+import sys
 
 import numpy as np
 
 from utils import sample_gaussian_mixture, stepwise_kmeans, create_mnist_dataset
-from plots import plot_experiment_one
+from plots import plot_movements
 
 
 def postprocess_results(results):
@@ -51,6 +53,7 @@ def experiment_one(
     constant_enabled,
     sample_beginning,
     filename,
+    experiment_name,
     read=None,
 ):
     if read is not None:
@@ -110,24 +113,56 @@ def experiment_one(
         logger.info("*" * 50)
 
         # Save the experiment results to a file
-        with open(filename + ".pkl", "wb") as f:
+        with open(f"results/{experiment_name}_{filename}.pkl", "wb") as f:
             pickle.dump(results, f)
 
     # Post-process results
     averaged_results = postprocess_results(results)
 
-    plot_experiment_one(averaged_results, filename + ".pdf")
+    plot_movements(averaged_results, f"plots/{experiment_name}_{filename}.pdf")
 
 
 # Example usage
 if __name__ == "__main__":
-    # np.random.seed(36)  # Fix randomness globally
-    logging.basicConfig(
-        level=logging.DEBUG, format="%(asctime)s [%(levelname)s] %(message)s"
-    )
-    logger = logging.getLogger("EXP1")
+    """
+    Experiment 1: Movement of Centroids Analysis
 
-    repetitions = 15
+    This experiment analyzes how the movement of centroids evolves over iterations
+    for both KMeans and EEKMeans algorithms. It runs multiple repetitions on fixed-size
+    datasets and tracks the average movement per iteration to understand convergence behavior.
+    """
+
+    # Create logs directory if it doesn't exist
+    os.makedirs("logs", exist_ok=True)
+    os.makedirs("results", exist_ok=True)
+    os.makedirs("plots", exist_ok=True)
+
+    # Configure logging to both file and console
+    log_filename = f"logs/EXP1_{datetime.datetime.now().strftime('%Y%m%d_%H%M%S')}.log"
+
+    # Create a formatter
+    formatter = logging.Formatter("%(asctime)s [%(levelname)s] %(message)s")
+
+    # Set up file handler
+    file_handler = logging.FileHandler(log_filename)
+    file_handler.setFormatter(formatter)
+    file_handler.setLevel(logging.DEBUG)
+
+    # Set up console handler
+    console_handler = logging.StreamHandler()
+    console_handler.setFormatter(formatter)
+    console_handler.setLevel(logging.DEBUG)
+
+    # Configure root logger
+    root_logger = logging.getLogger()
+    root_logger.setLevel(logging.DEBUG)
+    root_logger.addHandler(file_handler)
+    root_logger.addHandler(console_handler)
+
+    logger = logging.getLogger("EXP1")
+    logger.info(f"Logging to file: {log_filename}")
+
+    repetitions = 10
     n_clusters = 10
     max_iter = 30
     tol = 0
@@ -144,6 +179,8 @@ if __name__ == "__main__":
         f"t_{timestamp}"
     )
 
+    experiment_name = filename = os.path.splitext(os.path.basename(__file__))[0]
+
     experiment_one(
         logger,
         repetitions=repetitions,
@@ -155,6 +192,8 @@ if __name__ == "__main__":
         delta=delta,
         constant_enabled=constant_enabled,
         sample_beginning=sample_beginning,
-        filename=f"experiment_one_results_{param_str}",
+        filename=f"{param_str}",
+        experiment_name=experiment_name,
+        read="results/EXP1_dataset_mnist_k_10_maxiter_30_tol_0_eps_(200, 300, 400, 500)_delta_0.5_constenabled_False_samplebeginning_True_reps_10_t_20250727_201120.pkl",
         # read="experiment_one_results_dataset_gaussian_mixture_k_10_maxiter_28_tol_0_eps_(200, 500)_delta_0.5_constenabled_False_samplebeginning_True_reps_3_t_20250726_142753.pkl",
     )
