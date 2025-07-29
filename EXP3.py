@@ -1,6 +1,7 @@
 import logging
 import os
 import datetime
+from pprint import pformat
 
 # import time
 import pickle
@@ -22,7 +23,7 @@ from utils import (
 os.environ["NUMEXPR_MAX_THREADS"] = "16"
 
 
-def postprocess_results_rss(results, thetas):
+def postprocess_results_rss(results, thetas, size_dataset):
     # Compute RSS differences between KMeans and other algorithms
     rss_differences = {}
 
@@ -42,7 +43,10 @@ def postprocess_results_rss(results, thetas):
             ]
 
             # Compute the difference in averages for the current theta
-            rss_differences[key].append(np.mean(kmeans_rss) - np.mean(algorithm_rss))
+            rss_differences[key].append(
+                ((np.mean(algorithm_rss) - np.mean(kmeans_rss)) / np.mean(kmeans_rss))
+                * 100
+            )
 
     return rss_differences
 
@@ -223,7 +227,7 @@ def experiment_three(
         logger.info(f"Results saved to {filename}")
 
     # Postprocess results to get RSS differences for each theta
-    rss_differences = postprocess_results_rss(results, thetas)
+    rss_differences = postprocess_results_rss(results, thetas, size_dataset)
     # rss_differences is a DICTIONARY with keys as algorithm names and values as lists of RSS differences
 
     # Plot average RSS differences
@@ -231,7 +235,7 @@ def experiment_three(
         thetas,
         rss_differences=rss_differences,  # pass the dictionary of rss differences
         filename=f"plots/{experiment_name}_rss_differences_{filename}.pdf",
-        title="Exp3: RSS Difference between KMeans and EEKMeans vs Class Imbalance (Theta)",
+        title="Exp3: RSS Difference between EEKMeans and KMeans vs Class Imbalance (Theta)",
     )
     logger.info("Average RSS differences plotted.")
 
@@ -299,6 +303,51 @@ def experiment_three(
     )
     logger.info("Average number of iterations plotted.")
 
+    formatted_rss = {
+        key: [round(float(val), 2) for val in values]
+        for key, values in rss_differences.items()
+    }
+
+    print("Value of theta: " + pformat(thetas))
+    print(f"RSS Differences:\n {pformat(formatted_rss)}")
+
+    print(
+        "Average number of iterations:\n "
+        + pformat(
+            {
+                key: [round(float(val), 2) for val in values]
+                for key, values in average_number_of_iterations.items()
+            }
+        )
+    )
+    print(
+        "Average single iteration durations:\n "
+        + pformat(
+            {
+                key: [round(float(val), 2) for val in values]
+                for key, values in average_single_iteration_durations.items()
+            }
+        )
+    )
+    print(
+        "Average total iteration durations:\n "
+        + pformat(
+            {
+                key: [round(float(val), 2) for val in values]
+                for key, values in average_total_iteration_durations.items()
+            }
+        )
+    )
+    print(
+        "Average total clustering duration:\n "
+        + pformat(
+            {
+                key: [round(float(val), 2) for val in values]
+                for key, values in average_total_clustering_duration.items()
+            }
+        )
+    )
+
 
 # Example usage
 if __name__ == "__main__":
@@ -343,13 +392,14 @@ if __name__ == "__main__":
     logger = logging.getLogger("EXP4")
     logger.info(f"Logging to file: {log_filename}")
 
-    size_dataset = 60000  # Size of the dataset
-    thetas = np.linspace(0.05, 1, 5, dtype=float)
-    repetitions = 4
+    size_dataset = 170000  # Size of the dataset
+    # thetas = np.linspace(0.01, 1, 5, dtype=float)
+    thetas = np.linspace(0.01, 1, 4, dtype=float)  # Adjusted to avoid zero samples
+    repetitions = 5
     n_clusters = 10
-    max_iter = 40
-    tol = 15
-    epsilons = (200, 300, 400, 500)  # , 400, 500)  # (250, 450) --- IGNORE ---
+    max_iter = 70
+    tol = 12
+    epsilons = (200, 300)  # , 400, 500)  # , 400, 500)  # (250, 450) --- IGNORE ---
     delta = 0.5
     constant_enabled = False
     sample_beginning = True
@@ -359,7 +409,7 @@ if __name__ == "__main__":
     param_str = (
         f"dataset_{dataset}_k_{n_clusters}_maxiter_{max_iter}_tol_{tol}_eps_{epsilons}_delta_{delta}_"
         f"constenabled_{constant_enabled}_samplebeginning_{sample_beginning}_reps_{repetitions}_"
-        f"t_{timestamp}"
+        f"thetas_{thetas}_t_{timestamp}"
     )
     experiment_name = filename = os.path.splitext(os.path.basename(__file__))[0]
 
@@ -378,5 +428,5 @@ if __name__ == "__main__":
         sample_beginning,
         filename=f"{param_str}",
         experiment_name=experiment_name,
-        read="results/EXP3_dataset_mnist_k_10_maxiter_40_tol_15_eps_(200, 300, 400, 500)_delta_0.5_constenabled_False_samplebeginning_True_reps_4_t_20250728_032126.pkl",
+        read="results/EXP3_dataset_mnist_k_10_maxiter_70_tol_12_eps_(200, 300)_delta_0.5_constenabled_False_samplebeginning_True_reps_5_thetas_[0.01 0.34 0.67 1.  ]_t_20250729_183101.pkl",
     )

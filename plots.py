@@ -139,7 +139,7 @@ def plot_rss(
     plt.ylim(ymin - 0.2 * y_range, ymax + 0.15 * y_range)
 
     plt.xlabel(x_axis_name)
-    plt.ylabel("RSS Difference")
+    plt.ylabel("RSS Error (%)")
     plt.title(title)
     plt.grid(True, linestyle="--", alpha=0.7)
     plt.legend()

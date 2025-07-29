@@ -11,6 +11,7 @@ from plots import (
     plot_rss,
 )
 from utils import create_extended_dataset, sample_gaussian_mixture, stepwise_kmeans
+from pprint import pformat
 
 os.environ["NUMEXPR_MAX_THREADS"] = "16"
 
@@ -35,7 +36,10 @@ def postprocess_results_rss(results, sizes_datasets):
             ]
 
             # Compute the difference in averages for the current dataset size
-            rss_differences[key].append(np.mean(kmeans_rss) - np.mean(algorithm_rss))
+            rss_differences[key].append(
+                ((np.mean(algorithm_rss) - np.mean(kmeans_rss)) / np.mean(kmeans_rss))
+                * 100
+            )
 
     return rss_differences
 
@@ -220,6 +224,55 @@ def experiment_two(
         average_total_clustering_duration,
     ) = postprocess_results_time(results)
 
+    # Postprocess results to get RSS differences for each dataset size
+    rss_differences = postprocess_results_rss(results, sizes_datasets)
+    # rss_differences is a DICTIONARY with keys as algorithm names and values as lists of RSS differences
+
+    formatted_rss = {
+        key: [round(float(val), 2) for val in values]
+        for key, values in rss_differences.items()
+    }
+
+    print("Sizes of datasets: " + pformat(sizes_datasets))
+    print(f"RSS Differences:\n {pformat(formatted_rss)}")
+
+    print(
+        "Average number of iterations:\n "
+        + pformat(
+            {
+                key: [round(float(val), 2) for val in values]
+                for key, values in average_number_of_iterations.items()
+            }
+        )
+    )
+    print(
+        "Average single iteration durations:\n "
+        + pformat(
+            {
+                key: [round(float(val), 2) for val in values]
+                for key, values in average_single_iteration_durations.items()
+            }
+        )
+    )
+    print(
+        "Average total iteration durations:\n "
+        + pformat(
+            {
+                key: [round(float(val), 2) for val in values]
+                for key, values in average_total_iteration_durations.items()
+            }
+        )
+    )
+    print(
+        "Average total clustering duration:\n "
+        + pformat(
+            {
+                key: [round(float(val), 2) for val in values]
+                for key, values in average_total_clustering_duration.items()
+            }
+        )
+    )
+
     # Plot average iteration times
     plot_time(
         x_axis_name="Dataset size (n)",
@@ -284,17 +337,13 @@ def experiment_two(
         title="Exp2: Average Number of Iterations vs Dataset Size",
     )
 
-    # Postprocess results to get RSS differences for each dataset size
-    rss_differences = postprocess_results_rss(results, sizes_datasets)
-    # rss_differences is a DICTIONARY with keys as algorithm names and values as lists of RSS differences
-
     # Plot average RSS differences
     plot_rss(
         x_axis_name="Dataset size (n)",
         x_values=sizes_datasets,
         rss_differences=rss_differences,  # pass the dictionary of rss differences
         filename=f"plots/{experiment_name}_rss_differences_{filename}.pdf",
-        title="Exp2: RSS Difference between KMeans and EEKMeans vs Dataset Size",
+        title="Exp2: RSS Error between KMeans and EEKMeans vs Dataset Size",
     )
     logger.info("Average RSS differences plotted.")
 
