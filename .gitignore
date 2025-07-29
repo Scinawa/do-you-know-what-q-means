@@ -1,2 +1,4 @@
 .vscode
 venv
+sklearn-env
+__pycache__
