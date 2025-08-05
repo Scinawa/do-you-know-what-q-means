@@ -33,16 +33,10 @@ def create_extended_dataset(n):
     mnist = fetch_openml("mnist_784", version=1, as_frame=False)
     X, Y_ = mnist["data"], mnist["target"]
 
-    # Extend X and Y to length n by randomly sampling from X and Y (with replacement)
-    if len(X) < n:
-        num_to_add = n - len(X)
-        indices = np.random.choice(len(X), size=num_to_add, replace=True)
-        X_tended = np.vstack([X, X[indices]])
-        Y_tended = np.concatenate([Y_, Y_[indices]])
-    else:
-        X_tended = X[:n]
-        Y_tended = Y_[:n]
-
+    # Randomly sample n entries from the dataset
+    indices = np.random.choice(len(X), size=n, replace=True)
+    X_tended = np.vstack([X, X[indices]])
+    Y_tended = np.concatenate([Y_, Y_[indices]])
     return X_tended, Y_tended
 
 
