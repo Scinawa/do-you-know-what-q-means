@@ -170,8 +170,7 @@ def experiment_two(
             # n = X.shape[0]
 
             for i in range(repetitions):
-                logger.info(f"Repetition {i + 1} of {repetitions}")
-                # # KMeans
+                logger.info(f"Rep. {i + 1} of {repetitions} with KMeans")
                 results["KMeans"][n].append(
                     stepwise_kmeans(
                         X,
@@ -381,7 +380,7 @@ if __name__ == "__main__":
     # Set up file handler
     file_handler = logging.FileHandler(log_filename)
     file_handler.setFormatter(formatter)
-    file_handler.setLevel(logging.INFO)
+    file_handler.setLevel(logging.DEBUG)
 
     # Set up console handler
     console_handler = logging.StreamHandler()
@@ -397,12 +396,12 @@ if __name__ == "__main__":
     logger = logging.getLogger("EXP2")
     logger.info(f"Logging to file: {log_filename}")
 
-    sizes_datasets = np.linspace(60000, 200000, 5, dtype=int)
-    repetitions = 4
+    sizes_datasets = np.linspace(60000, 300000, 6, dtype=int)
+    repetitions = 5
     n_clusters = 10
-    max_iter = 65
-    tol = 15
-    epsilons = (200, 300, 400, 500)  # (250, 450) --- IGNORE ---
+    max_iter = 50
+    tol = 10
+    epsilons = (200, 300, 400, 500)
     delta = 0.5
     constant_enabled = False
     sample_beginning = True
@@ -431,6 +430,6 @@ if __name__ == "__main__":
         sample_beginning,
         filename=f"{param_str}",
         experiment_name=experiment_name,
-        read="results/EXP2_dataset_mnist_k_10_maxiter_65_tol_15_eps_(200, 300, 400, 500)_delta_0.5_constenabled_False_samplebeginning_True_reps_4_t_20250727_210518.pkl",
+        # read="results/EXP2_dataset_mnist_k_10_maxiter_65_tol_15_eps_(200, 300, 400, 500)_delta_0.5_constenabled_False_samplebeginning_True_reps_4_t_20250727_210518.pkl",
         # read="experiment_two_results_dataset_mnist_k_10_maxiter_65_tol_15_eps_(250, 450)_delta_0.5_constenabled_False_samplebeginning_True_reps_2_t_20250726_152659.pkl",
     )

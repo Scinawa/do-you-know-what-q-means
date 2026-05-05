@@ -3,6 +3,7 @@ import logging
 
 import numpy as np
 from scipy.stats import rv_discrete
+from functools import lru_cache
 
 
 class BaseKMeans:

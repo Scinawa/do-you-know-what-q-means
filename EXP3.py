@@ -1,6 +1,7 @@
 import logging
 import os
 import datetime
+from concurrent.futures import ProcessPoolExecutor, as_completed
 from pprint import pformat
 
 # import time
@@ -21,6 +22,92 @@ from utils import (
 )
 
 os.environ["NUMEXPR_MAX_THREADS"] = "16"
+
+
+_CLUSTERING_WORKER_CONFIG = {}
+
+
+def _init_clustering_worker(
+    X,
+    n_clusters,
+    max_iter,
+    tol,
+    delta,
+    constant_enabled,
+    sample_beginning,
+    logger_name,
+):
+    global _CLUSTERING_WORKER_CONFIG
+    _CLUSTERING_WORKER_CONFIG = {
+        "X": X,
+        "n_clusters": n_clusters,
+        "max_iter": max_iter,
+        "tol": tol,
+        "delta": delta,
+        "constant_enabled": constant_enabled,
+        "sample_beginning": sample_beginning,
+        "logger_name": logger_name,
+    }
+
+
+def _run_kmeans(rep_index):
+    if not _CLUSTERING_WORKER_CONFIG:
+        raise RuntimeError("Clustering worker has not been initialized.")
+
+    logger = logging.getLogger(_CLUSTERING_WORKER_CONFIG["logger_name"])
+    trace = stepwise_kmeans(
+        _CLUSTERING_WORKER_CONFIG["X"],
+        n_clusters=_CLUSTERING_WORKER_CONFIG["n_clusters"],
+        max_iter=_CLUSTERING_WORKER_CONFIG["max_iter"],
+        tol=_CLUSTERING_WORKER_CONFIG["tol"],
+        algorithm="KMeans",
+        logger=logger,
+        seed_for_centroids=rep_index,
+    )
+    return rep_index, "KMeans", trace
+
+
+def _run_eekmeans_for_epsilon(rep_index, epsilon):
+    if not _CLUSTERING_WORKER_CONFIG:
+        raise RuntimeError("Clustering worker has not been initialized.")
+
+    result_key = f"EEKMeans-ε={epsilon}"
+    logger = logging.getLogger(_CLUSTERING_WORKER_CONFIG["logger_name"])
+    trace = stepwise_kmeans(
+        _CLUSTERING_WORKER_CONFIG["X"],
+        n_clusters=_CLUSTERING_WORKER_CONFIG["n_clusters"],
+        max_iter=_CLUSTERING_WORKER_CONFIG["max_iter"],
+        tol=_CLUSTERING_WORKER_CONFIG["tol"],
+        algorithm="EEKMeans",
+        logger=logger,
+        epsilon=epsilon,
+        delta=_CLUSTERING_WORKER_CONFIG["delta"],
+        constant_enabled=_CLUSTERING_WORKER_CONFIG["constant_enabled"],
+        sample_beginning=_CLUSTERING_WORKER_CONFIG["sample_beginning"],
+        seed_for_centroids=rep_index,
+    )
+    return rep_index, result_key, trace
+
+
+def _validate_results_for_theta(results, theta, repetitions):
+    for key, theta_results in results.items():
+        if theta not in theta_results:
+            raise ValueError(f"Missing theta={theta} results for {key}.")
+
+        traces = theta_results[theta]
+        if len(traces) != repetitions:
+            raise ValueError(
+                f"{key} theta={theta} has {len(traces)} repetitions; "
+                f"expected {repetitions}."
+            )
+
+        missing_repetitions = [
+            rep_index for rep_index, trace in enumerate(traces) if trace is None
+        ]
+        if missing_repetitions:
+            raise ValueError(
+                f"{key} theta={theta} is missing repetitions {missing_repetitions}."
+            )
 
 
 def postprocess_results_rss(results, thetas, size_dataset):
@@ -159,12 +246,14 @@ def experiment_three(
         results = {"KMeans": {}}
         for epsilon in epsilons:
             results[f"EEKMeans-ε={epsilon}"] = {}
+        if len(epsilons) == 0:
+            raise ValueError("epsilons must contain at least one value.")
 
         for theta in thetas:
             logger.info(f"Running experiment for theta={theta}")
 
             for key in results.keys():
-                results[key][theta] = []
+                results[key][theta] = [None] * repetitions
 
             if dataset == "gaussian_mixture":
                 X, Y = sample_gaussian_mixture(n=size_dataset, d=1000, k=n_clusters)
@@ -177,48 +266,53 @@ def experiment_three(
 
             # TODO skew the dataset if needed
             X, Y = make_dataset_skewed(X, Y, theta, logger)
-            n = X.shape[0]
 
-            for i in range(repetitions):
-                logger.info(f"Repetition {i + 1} of {repetitions}")
-                # # KMeans
-                results["KMeans"][theta].append(
-                    stepwise_kmeans(
-                        X,
-                        n_clusters=n_clusters,
-                        max_iter=max_iter,
-                        tol=tol,
-                        algorithm="KMeans",
-                        logger=logger,
-                        seed_for_centroids=i,
-                    )
-                )
+            with ProcessPoolExecutor(
+                max_workers=len(epsilons) + 1,
+                initializer=_init_clustering_worker,
+                initargs=(
+                    X,
+                    n_clusters,
+                    max_iter,
+                    tol,
+                    delta,
+                    constant_enabled,
+                    sample_beginning,
+                    f"{logger.name}.worker",
+                ),
+            ) as executor:
+                for i in range(repetitions):
+                    logger.info(f"Repetition {i + 1} of {repetitions}")
 
-                # EEKMeans
-                for epsilon in epsilons:
-                    logger.info(
-                        f"Rep. {i + 1} of {repetitions} with EEKMeans-ε={epsilon}"
-                    )
+                    futures = [executor.submit(_run_kmeans, i)]
+                    logger.info(f"Rep. {i + 1} of {repetitions} with KMeans")
 
                     # EEKMeans
-                    results[f"EEKMeans-ε={epsilon}"][theta].append(
-                        stepwise_kmeans(
-                            X,
-                            n_clusters=n_clusters,
-                            max_iter=max_iter,
-                            tol=tol,
-                            algorithm="EEKMeans",
-                            logger=logger,
-                            # Parameters for EEKMeans
-                            epsilon=epsilon,
-                            delta=delta,
-                            constant_enabled=constant_enabled,
-                            sample_beginning=sample_beginning,
-                            seed_for_centroids=i,
+                    for epsilon in epsilons:
+                        logger.info(
+                            f"Rep. {i + 1} of {repetitions} with EEKMeans-ε={epsilon}"
                         )
-                    )
 
-                logger.info("*" * 50)
+                        futures.append(
+                            executor.submit(_run_eekmeans_for_epsilon, i, epsilon)
+                        )
+
+                    for future in as_completed(futures):
+                        rep_index, result_key, trace = future.result()
+                        if result_key not in results:
+                            raise KeyError(
+                                f"Unexpected clustering result key: {result_key}"
+                            )
+                        if results[result_key][theta][rep_index] is not None:
+                            raise ValueError(
+                                f"Duplicate result for {result_key}, theta={theta}, "
+                                f"repetition={rep_index}."
+                            )
+                        results[result_key][theta][rep_index] = trace
+
+                    logger.info("*" * 50)
+
+            _validate_results_for_theta(results, theta, repetitions)
 
         # timestamp = datetime.datetime.now().strftime("%Y%m%d_%H%M%S")
         filename = filename
@@ -394,13 +488,13 @@ if __name__ == "__main__":
 
     size_dataset = 170000  # Size of the dataset
     # thetas = np.linspace(0.01, 1, 5, dtype=float)
-    thetas = np.linspace(0.01, 1, 4, dtype=float)  # Adjusted to avoid zero samples
-    repetitions = 5
+    thetas = np.linspace(0.01, 1, 7, dtype=float)  # Adjusted to avoid zero samples
+    repetitions = 10
     n_clusters = 10
-    max_iter = 70
-    tol = 12
-    epsilons = (200, 300)  # , 400, 500)  # , 400, 500)  # (250, 450) --- IGNORE ---
-    delta = 0.5
+    max_iter = 50
+    tol = 38.25
+    epsilons = (127.5, 255.0, 382.5, 510.0, 637.5)
+    delta = 0.01
     constant_enabled = False
     sample_beginning = True
     dataset = "mnist"  # "gaussian_mixture" or "mnist"
@@ -428,5 +522,6 @@ if __name__ == "__main__":
         sample_beginning,
         filename=f"{param_str}",
         experiment_name=experiment_name,
-        read="results/EXP3_dataset_mnist_k_10_maxiter_70_tol_12_eps_(200, 300)_delta_0.5_constenabled_False_samplebeginning_True_reps_5_thetas_[0.01 0.34 0.67 1.  ]_t_20250729_183101.pkl",
+        read=None,
+        # read="results/EXP3_dataset_mnist_k_10_maxiter_70_tol_12_eps_(200, 300)_delta_0.5_constenabled_False_samplebeginning_True_reps_5_thetas_[0.01 0.34 0.67 1.  ]_t_20250729_183101.pkl",
     )

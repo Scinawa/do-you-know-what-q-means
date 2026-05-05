@@ -162,7 +162,7 @@ if __name__ == "__main__":
     logger = logging.getLogger("EXP1")
     logger.info(f"Logging to file: {log_filename}")
 
-    repetitions = 10
+    repetitions = 15
     n_clusters = 10
     max_iter = 30
     tol = 0
